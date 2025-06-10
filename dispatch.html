@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>배차 목록</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#43a047">
+    <meta name="description" content="배차 관리 및 조회 앱">
+    <link rel="manifest" href="/sw-app/manifest.json">
+    <link rel="apple-touch-icon" href="/sw-app/icon-192x192.png">
+    <!-- Firebase SDK 추가 -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 10px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .date-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .date-picker {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            height: 44px;
+        }
+        .search-btn {
+            width: 100%;
+            height: 44px;
+            font-size: 18px;
+            font-weight: bold;
+            margin: 10px 0 10px 0;
+            background: #43a047;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(67,160,71,0.08);
+            transition: background 0.2s;
+        }
+        .search-btn:hover {
+            background: #388e3c;
+        }
+        .dispatch-list {
+            margin-top: 10px;
+        }
+        .dispatch-list-row {
+            border-bottom: 1px solid #eee;
+            padding: 14px 0 10px 0;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex;
+            align-items: flex-start;
+        }
+        .dispatch-list-row:hover {
+            background: #f5f5f5;
+        }
+        .dispatch-list-row-content {
+            flex: 1;
+        }
+        .dispatch-list-row-checkbox {
+            margin-right: 10px;
+            margin-top: 4px;
+        }
+        .dispatch-list-row-checkbox input {
+            width: 18px;
+            height: 18px;
+        }
+        .dispatch-list-row-main {
+            font-weight: bold;
+            font-size: 16px;
+            color: #222;
+            margin-bottom: 2px;
+            display: flex;
+            gap: 8px;
+        }
+        .dispatch-list-row-main .date {
+            min-width: 90px;
+            color: #388e3c;
+        }
+        .dispatch-list-row-sub {
+            font-size: 15px;
+            color: #444;
+            margin-bottom: 2px;
+            word-break: break-all;
+        }
+        .dispatch-list-row-bottom {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+        .dispatch-list-row-bottom .car-number {
+            color: #555;
+            font-size: 13px;
+        }
+        .dispatch-list-row-bottom .cargo {
+            color: #888;
+            font-size: 13px;
+        }
+        .copy-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 13px;
+            min-width: 38px;
+            margin-left: 8px;
+        }
+        .copy-btn:hover {
+            background: #388e3c;
+        }
+        .copy-btn:active {
+            background: #2e7d32;
+        }
+        .phone-link {
+            color: #2196F3;
+            text-decoration: none;
+            font-size: 13px;
+        }
+        .phone-link:hover {
+            text-decoration: underline;
+        }
+        /* 모달 스타일 */
+        .modal-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-box {
+            background: #fff;
+            border-radius: 10px;
+            max-width: 90vw;
+            width: 350px;
+            padding: 24px 18px 18px 18px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            position: relative;
+        }
+        .modal-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .modal-row {
+            margin-bottom: 8px;
+            font-size: 16px;
+            display: flex;
+        }
+        .modal-label {
+            min-width: 90px;
+            color: #388e3c;
+            font-weight: bold;
+        }
+        .modal-value {
+            color: #222;
+            word-break: break-all;
+        }
+        .modal-close {
+            position: absolute;
+            top: 10px; right: 14px;
+            font-size: 22px;
+            color: #888;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        .multi-copy-btn {
+            width: 90vw;
+            max-width: 500px;
+            height: 48px;
+            font-size: 18px;
+            font-weight: bold;
+            background: #2196F3;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(33,150,243,0.15);
+            transition: background 0.2s;
+            position: fixed;
+            left: 50%;
+            bottom: 18px;
+            transform: translateX(-50%);
+            z-index: 2000;
+            display: none;
+        }
+        .multi-copy-btn:hover {
+            background: #1976D2;
+        }
+        .sort-btn {
+            background: #f5f5f5;
+            border: 1px solid #43a047;
+            color: #222;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            padding: 8px 16px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+        .sort-btn.active {
+            background: #43a047;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <!-- 로그인 박스 -->
+    <div id="loginBox" style="max-width:400px; margin:60px auto 0 auto; padding:30px 20px; background:#fff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); display:none;">
+        <h2 style="text-align:center; color:#388e3c; margin-bottom:18px;">로그인</h2>
+        <input type="email" id="email" placeholder="이메일" style="width:100%;height:44px;font-size:16px;margin-bottom:10px;padding:8px 10px;border:1px solid #ddd;border-radius:4px;">
+        <input type="password" id="password" placeholder="비밀번호" style="width:100%;height:44px;font-size:16px;margin-bottom:16px;padding:8px 10px;border:1px solid #ddd;border-radius:4px;">
+        <button onclick="login()" style="width:100%;height:44px;font-size:18px;font-weight:bold;background:#43a047;color:#fff;border:none;border-radius:6px;">로그인</button>
+    </div>
+    <div class="container" id="mainBox" style="display:none;">
+        <h1>배차 목록</h1>
+        <div class="date-row">
+            <input type="date" id="startDate" class="date-picker" value="">
+            <span style="align-self:center;">~</span>
+            <input type="date" id="endDate" class="date-picker" value="">
+        </div>
+        <button id="searchBtn" class="search-btn">조회</button>
+        <div style="display:flex; justify-content:center; gap:8px; margin-bottom:10px;">
+            <button id="sortDescBtn" class="sort-btn active">날짜 내림차순</button>
+            <button id="sortAscBtn" class="sort-btn">날짜 오름차순</button>
+        </div>
+        <div id="dispatchList"></div>
+        <div id="modalBg" style="display:none;"></div>
+        <button id="multiCopyBtn" class="multi-copy-btn" style="display:none;">다중 복사</button>
+    </div>
+
+    <script>
+        // Service Worker 등록
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/배차앱/service-worker.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful');
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+
+        // Firebase 초기화
+        const firebaseConfig = {
+  apiKey: "AIzaSyD6S2dILlwKETij2-X6jlRWasZwIzmvdp8",
+  authDomain: "sw-it-v01.firebaseapp.com",
+  databaseURL: "https://sw-it-v01-default-rtdb.firebaseio.com",
+  projectId: "sw-it-v01",
+  storageBucket: "sw-it-v01.firebasestorage.app",
+  messagingSenderId: "1000586137880",
+  appId: "1:1000586137880:web:7984aaae42070bb5dc0e6d",
+  measurementId: "G-Y5R0S9SGPD"
+};
+
+        // Firebase 초기화
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // 오늘 날짜 기본값
+        function getTodayStr() {
+            const today = new Date();
+            return today.toISOString().slice(0, 10);
+        }
+
+        // 날짜 입력란 및 체크박스 상태 복원
+        function restoreState() {
+            // 날짜 복원
+            const savedStart = localStorage.getItem('dispatch_startDate');
+            const savedEnd = localStorage.getItem('dispatch_endDate');
+            document.getElementById('startDate').value = savedStart || getTodayStr();
+            document.getElementById('endDate').value = savedEnd || getTodayStr();
+        }
+        restoreState();
+
+        // 날짜 변경 시 localStorage에 저장
+        document.getElementById('startDate').addEventListener('change', function(e) {
+            localStorage.setItem('dispatch_startDate', e.target.value);
+        });
+        document.getElementById('endDate').addEventListener('change', function(e) {
+            localStorage.setItem('dispatch_endDate', e.target.value);
+        });
+
+        // 정렬 상태 전역 변수
+        let currentSort = 'desc'; // 기본값: 내림차순(최신순)
+
+        // 정렬 함수
+        function sortDispatchData(data) {
+            return data.slice().sort((a, b) => {
+                if (!a.date || !b.date) return 0;
+                if (currentSort === 'desc') {
+                    return b.date.localeCompare(a.date);
+                } else {
+                    return a.date.localeCompare(b.date);
+                }
+            });
+        }
+
+        // 기간 데이터 불러오기
+        async function fetchDispatchDataByRange() {
+            let startDate = document.getElementById('startDate').value.trim();
+            let endDate = document.getElementById('endDate').value.trim();
+            if (!startDate || !endDate) {
+                alert('시작일과 종료일을 모두 선택하세요.');
+                return;
+            }
+            if (startDate > endDate) {
+                alert('시작일이 종료일보다 늦을 수 없습니다.');
+                return;
+            }
+            try {
+                console.log("기간 조회:", startDate, '~', endDate);
+                // 1. dispatchReports 컬렉션에서 기간 내 문서 조회
+                const reportSnapshot = await db.collection("dispatchReports")
+                    .where("date", ">=", startDate)
+                    .where("date", "<=", endDate)
+                    .get();
+
+                let dispatchData = [];
+                // 2. 각 문서의 rows 서브컬렉션에서 데이터 가져오기 (date 포함)
+                for (const doc of reportSnapshot.docs) {
+                    const reportDate = doc.data().date;
+                    const rowsSnapshot = await doc.ref.collection("rows").get();
+                    rowsSnapshot.forEach(rowDoc => {
+                        const rowData = rowDoc.data();
+                        rowData.date = reportDate; // row에 날짜 추가
+                        dispatchData.push(rowData);
+                    });
+                }
+                console.log("기간 데이터 가져오기 성공:", dispatchData.length, "개 문서");
+                renderDispatchList(dispatchData);
+                restoreCheckboxState();
+            } catch (error) {
+                console.error("기간 데이터 가져오기 실패:", error);
+                alert("데이터를 가져오는데 실패했습니다: " + error.message);
+            }
+        }
+
+        // 조회 버튼 이벤트
+        document.getElementById('searchBtn').addEventListener('click', fetchDispatchDataByRange);
+
+        // 최초 로딩 시 오늘 하루 데이터 표시 (또는 저장된 날짜)
+        fetchDispatchDataByRange();
+
+        // 체크박스 상태 저장/복원
+        function saveCheckboxState() {
+            const checked = Array.from(document.querySelectorAll('input[type="checkbox"][id^="check_"]'))
+                .filter(box => box.checked)
+                .map(box => box.id);
+            localStorage.setItem('dispatch_checked', JSON.stringify(checked));
+        }
+        function restoreCheckboxState() {
+            const checked = JSON.parse(localStorage.getItem('dispatch_checked') || '[]');
+            checked.forEach(id => {
+                const box = document.getElementById(id);
+                if (box) box.checked = true;
+            });
+            updateMultiCopyBtn();
+        }
+
+        // 배차 목록 렌더링 (정렬 반영)
+        function renderDispatchList(dispatchData) {
+            const list = document.getElementById('dispatchList');
+            // company는 존재하지만 vehicleNumber와 route가 모두 없는 항목은 제외
+            const filteredData = dispatchData.filter(item => {
+                if (!item.company) return true; // company가 없으면 그냥 표시
+                // company가 있는데 차량번호와 운송구간이 모두 없으면 제외
+                return !!(item.vehicleNumber || item.route);
+            });
+            if (filteredData.length === 0) {
+                list.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">데이터가 없습니다.</div>';
+                return;
+            }
+            // 정렬 적용
+            const sortedData = sortDispatchData(filteredData);
+            let html = `<div class="dispatch-list">`;
+            html += sortedData.map((item, idx) => `
+                <div class="dispatch-list-row" onclick="showDetailModal(${idx})">
+                    <div class="dispatch-list-row-checkbox" onclick="event.stopPropagation();">
+                        <input type="checkbox" id="check_${idx}" onchange="updateMultiCopyBtn(); saveCheckboxState();">
+                    </div>
+                    <div class="dispatch-list-row-content">
+                        <div class="dispatch-list-row-main">
+                            <span class="date">${item.date || ''}</span>
+                            <span>${item.company || ''}</span>
+                        </div>
+                        <div class="dispatch-list-row-sub">${item.route || ''}</div>
+                        <div class="dispatch-list-row-bottom" onclick="event.stopPropagation();">
+                            <span class="car-number">${item.vehicleNumber || item.carNumber || item['차량번호'] || ''}</span>
+                            <span class="cargo">${item.cargo || ''}</span>
+                            <a href="tel:${item.contact || ''}" class="phone-link" style="margin-right:8px;">${item.contact || ''}</a>
+                            <button class="copy-btn" onclick="copyInfo('${item.company || ''}', '${item.date || ''}', '${item.route || ''}', '${item.contact || ''}', '${item.driverName || ''}'); event.stopPropagation();">복사</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            html += '</div>';
+            list.innerHTML = html;
+
+            // 상세 데이터 전역 저장 (정렬된 데이터로)
+            window._dispatchData = sortedData;
+            updateMultiCopyBtn();
+            restoreCheckboxState();
+        }
+
+        // 복사 기능 (5개 항목 줄바꿈)
+        function copyInfo(company, date, route, contact, driverName) {
+            const text = `거래처상호: ${company}\n날짜: ${date}\n운행구간: ${route}\n연락처: ${contact}\n이름: ${driverName}`;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('복사되었습니다!');
+            });
+        }
+
+        // 다중 선택 복사 기능
+        function updateMultiCopyBtn() {
+            const checkedBoxes = document.querySelectorAll('input[type="checkbox"]:checked');
+            const multiCopyBtn = document.getElementById('multiCopyBtn');
+            if (checkedBoxes.length > 0) {
+                multiCopyBtn.style.display = 'block';
+            } else {
+                multiCopyBtn.style.display = 'none';
+            }
+        }
+
+        function multiCopy() {
+            const checkedBoxes = document.querySelectorAll('input[type="checkbox"]:checked');
+            if (checkedBoxes.length === 0) {
+                alert('복사할 항목을 선택하세요.');
+                return;
+            }
+            let text = '';
+            checkedBoxes.forEach((box, index) => {
+                const itemIdx = box.id.split('_')[1];
+                const data = window._dispatchData[itemIdx];
+                text += `거래처상호: ${data.company || ''}\n날짜: ${data.date || ''}\n운행구간: ${data.route || ''}\n연락처: ${data.contact || ''}\n이름: ${data.driverName || ''}`;
+                if (index < checkedBoxes.length - 1) {
+                    text += '\n\n---\n\n';
+                }
+            });
+            navigator.clipboard.writeText(text).then(() => {
+                alert('선택한 항목이 복사되었습니다!');
+                // 체크박스 해제 및 localStorage 초기화
+                checkedBoxes.forEach(box => { box.checked = false; });
+                localStorage.removeItem('dispatch_checked');
+                updateMultiCopyBtn();
+            });
+        }
+
+        // 다중 선택 복사 버튼 이벤트
+        document.getElementById('multiCopyBtn').addEventListener('click', multiCopy);
+
+        // 상세 모달 표시 함수
+        function showDetailModal(idx) {
+            const data = window._dispatchData[idx];
+            const modalBg = document.getElementById('modalBg');
+            modalBg.innerHTML = `
+                <div class="modal-bg" onclick="closeModal()">
+                    <div class="modal-box" onclick="event.stopPropagation();">
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                        <div class="modal-title">배차 상세 내역</div>
+                        <div class="modal-row"><span class="modal-label">거래처상호</span><span class="modal-value">${data.company || ''}</span></div>
+                        <div class="modal-row"><span class="modal-label">날짜</span><span class="modal-value">${data.date || ''}</span></div>
+                        <div class="modal-row"><span class="modal-label">차량번호</span><span class="modal-value">${data.vehicleNumber || data.carNumber || data['차량번호'] || ''}</span></div>
+                        <div class="modal-row"><span class="modal-label">운행구간</span><span class="modal-value">${data.route || ''}</span></div>
+                        <div class="modal-row"><span class="modal-label">차종</span><span class="modal-value">${data.cargo || ''}</span></div>
+                        <div class="modal-row"><span class="modal-label">청구운송비</span><span class="modal-value">${data.billingAmount ? data.billingAmount.toLocaleString() : ''}</span></div>
+                        <div class="modal-row"><span class="modal-label">지급운송비</span><span class="modal-value">${data.paymentAmount ? data.paymentAmount.toLocaleString() : ''}</span></div>
+                        <div class="modal-row"><span class="modal-label">연락처</span><span class="modal-value"><a href="tel:${data.contact || ''}" class="phone-link">${data.contact || ''}</a></span></div>
+                        <div class="modal-row"><span class="modal-label">이름</span><span class="modal-value">${data.driverName || ''}</span></div>
+                    </div>
+                </div>
+            `;
+            modalBg.style.display = '';
+        }
+        function closeModal() {
+            document.getElementById('modalBg').style.display = 'none';
+        }
+
+        // 로그인 함수
+        function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            firebase.auth().signInWithEmailAndPassword(email, password)
+                .then(userCredential => {
+                    alert('로그인 성공!');
+                    document.getElementById('loginBox').style.display = 'none';
+                    document.getElementById('mainBox').style.display = '';
+                    fetchDispatchDataByRange();
+                })
+                .catch(error => {
+                    alert('로그인 실패: ' + error.message);
+                });
+        }
+
+        // 로그인 상태 체크
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                document.getElementById('loginBox').style.display = 'none';
+                document.getElementById('mainBox').style.display = '';
+                fetchDispatchDataByRange();
+            } else {
+                document.getElementById('loginBox').style.display = '';
+                document.getElementById('mainBox').style.display = 'none';
+            }
+        });
+
+        // 정렬 버튼 이벤트
+        document.getElementById('sortDescBtn').addEventListener('click', function() {
+            currentSort = 'desc';
+            document.getElementById('sortDescBtn').classList.add('active');
+            document.getElementById('sortAscBtn').classList.remove('active');
+            if (window._dispatchData) renderDispatchList(window._dispatchData);
+        });
+        document.getElementById('sortAscBtn').addEventListener('click', function() {
+            currentSort = 'asc';
+            document.getElementById('sortAscBtn').classList.add('active');
+            document.getElementById('sortDescBtn').classList.remove('active');
+            if (window._dispatchData) renderDispatchList(window._dispatchData);
+        });
+    </script>
+</body>
+</html>
